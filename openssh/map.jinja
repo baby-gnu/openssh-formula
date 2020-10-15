@@ -138,6 +138,7 @@
     } %}
 
 {#- Process each `map.jinja` source #}
+{#- source format is `[<TYPE>[:<OPTION>[:DELIM]]@]<KEY>` #}
 {#- each source has a type: #}
 {#- - `Y` to load values from YAML files (the default when no type is set) #}
 {#- - `C` to lookup values with `config.get` #}
@@ -149,23 +150,47 @@
 {#- - `I` for query with `pillar.get` #}
 {#- The `C`, `G` or `I` types can define the `SUB` option #}
 {#- to merge values in the sub key `mapdata.<key>` instead of directly in `mapdata` #}
+{#- You can choose a different delimiter when doing queries #}
 {%- for map_source in map_sources %}
 {%-   set source_parts = map_source.split('@') %}
 {%-   if source_parts|length == 1 %}
 {#-     By default we load YAML files for config looked up by `config.get` #}
 {%-     set source_type = "Y" %}
 {%-     set query_type = "C" %}
+{%-     set query_delimiter = ":" %}
 {%-     set source_key = map_source %}
-{%-   elif source_parts[0][0] == "Y" %}
-{%-     set source_type = "Y" %}
-{%-     set query_type = source_parts[0].split(':')[1] | default("C") %}
+{%-   else %}
+{%-     set metadatas = source_parts[0].split(":") %}
 {%-     set source_key = source_parts[1] %}
-{%-   elif source_parts[0][0] in query_map.keys() %}
-{%-     set source_type = source_parts[0].split(':') | first %}
-{%-     set query_type = source_type %}
-{%-     set is_sub_key = source_parts[0].split(':')[1] | default(False) == "SUB" %}
-{%-     set source_key = source_parts[1] %}
+{%-     if metadatas|length == 1 %}
+{%-       set source_type = metadatas[0] %}
+{%-       set source_option = "C" %}
+{%-       set query_delimiter = ":" %}
+{%-     elif metadatas|length == 2 %}
+{%-       set source_type = metadatas[0] %}
+{%-       set source_option = metadatas[1] %}
+{%-       set query_delimiter = ":" %}
+{%-     elif metadatas|length == 3 %}
+{%-       set source_type = metadatas[0] %}
+{%-       set source_option = metadatas[1] %}
+{%-       set query_delimiter = metadatas[2] | default(":", boolean=True) %}
+{%-     elif metadatas|length == 4 %}
+{#-       The delimiter is `:` #}
+{%-       set source_type = metadatas[0] %}
+{%-       set source_option = metadatas[1] %}
+{%-       set query_delimiter = ":" %}
+{%-     endif %}
+
+{#-     The source `<OPTION>` has different meaning based on type #}
+{%-     if source_type == "Y" %}
+{%-       set query_type = source_option | default("C", boolean=True) %}
+{%-     elif source_type in query_map.keys() %}
+{%-       set query_type = source_type %}
+{%-       set is_sub_key = source_option | default(False) == "SUB" %}
+{%-     endif %}
+
 {%-   endif %}
+
 
 {%-   set query_method = query_map[query_type] %}
 
@@ -184,11 +209,13 @@
           "map.jinja: retrieve '"
           ~ source_key
           ~ "' with '" ~ query_method ~ "'"
+          ~ ", delimiter='" ~ query_delimiter ~ "'"
           ~ merge_msg
         ) %}
 {%-     set _config_get = salt[query_method](
           source_key,
           default={},
+          delimiter=query_delimiter,
           **merge_opts
         ) %}
 
@@ -229,8 +256,13 @@
           ~ "'" ~ source_key ~ "'"
           ~ " with "
           ~ "'" ~ query_method ~ "'"
+          ~ ", delimiter='" ~ query_delimiter ~ "'"
         ) %}
-{%-     set map_values = salt[query_method](source_key, []) %}
+{%-     set map_values = salt[query_method](
+          source_key,
+          delimiter=query_delimiter,
+          default=[]
+        ) %}
 
 {#-     Mangle `source_key` to use it as literal path #}
 {%-     if map_values | length == 0 %}
