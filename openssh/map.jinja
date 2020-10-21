@@ -24,16 +24,14 @@
 {%- set _map_settings = mapstack(
       matchers=["map_jinja.yaml"],
       defaults={"values":
-                 {"map_jinja":
-                   {"sources": map_sources}
-                 }
+                 {"sources": map_sources}
                },
       log_prefix="map.jinja configuration: ",
     )
     | load_yaml
     %}
 
-{%- set map_sources = _map_settings | traverse("values:map_jinja:sources") %}
+{%- set map_sources = _map_settings | traverse("values:sources") %}
 {%- do salt["log.debug"](
       "map.jinja: load parameters from sources"
       ~ ":\n" ~ map_sources
@@ -56,9 +54,10 @@
 
 {#- Make sure to track `map.jinja` configuration with `_mapdata` #}
 {%- do _formula_settings["values"].update(
-      {"map_jinja":
-        {"sources": map_sources}
-      }) %}
+      {
+        "map_jinja": _map_settings["values"]
+      }
+    ) %}
 
 {%- do salt["log.debug"]("map.jinja: save parameters in variable 'mapdata'") %}
 {%- set mapdata = _formula_settings["values"] %}
