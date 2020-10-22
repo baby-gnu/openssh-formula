@@ -1,7 +1,49 @@
+{#- -*- coding: utf-8 -*- #}
+{#- vim: ft=jinja #}
+
+{#- Get the `tplroot` from `tpldir` #}
+{%- set tplroot = tpldir.split("/")[0] %}
+{%- from tplroot ~ "/libmapstack.jinja" import mapstack %}
+
+{#- Where is stored the `libtofs` configuration: #}
+{#- 1. `parameters/libtofs.yaml` #}
+{#- 2. `<tplroot>/parameters/libtofs.yaml` #}
+{#- 3. `salt["config.get"]("tofs")` #}
+{#- 4. `salt["config.get"](tplroot ~ "tofs")` #}
+{%- set _tofs_matchers = [
+      "libtofs.yaml",
+      "C@tofs",
+      "C@" ~ tplroot ~ ":tofs",
+    ] %}
+
+{%- set _tofs_defaults = {
+      "values": {
+        "path_prefix": tplroot,
+        "dirs": {
+          "default": "default",
+          "files": "files"
+        },
+        "files_switch": [
+          "id",
+          "os_family",
+        ],
+      },
+    }
+    %}
+
+
+{%- set _tofs_settings = mapstack(
+      matchers=_tofs_matchers,
+      defaults=_tofs_defaults,
+      log_prefix="libtofs configuration: ",
+    )
+    | load_yaml
+    %}
+
 {%- macro files_switch(
       source_files,
       lookup=None,
-      default_files_switch=["id", "os_family"],
+      default_files_switch=None,
       indent_width=6,
       use_subpath=False
     ) %}
@@ -44,22 +86,33 @@
             - salt://xxx/files/default/etc/yyy/zzz.conf.jinja
           - template: jinja
 #}
-{#-   Get the `tplroot` from `tpldir` #}
-{%-   set tplroot = tpldir.split("/")[0] %}
-{%-   set path_prefix = salt["config.get"](tplroot ~ ":tofs:path_prefix", tplroot) %}
-{%-   set files_dir = salt["config.get"](tplroot ~ ":tofs:dirs:files", "files") %}
-{%-   set files_switch_list = salt["config.get"](
-        tplroot ~ ":tofs:files_switch", default_files_switch
+
+{#-   Lookup configuration #}
+{%-   set path_prefix = _tofs_settings
+      | traverse("values:path_prefix") %}
+{%-   set files_dir = _tofs_settings
+      | traverse("values:dirs:files") %}
+{%-   set files_switch_list = default_files_switch
+      | default(
+        _tofs_settings
+        | traverse("values:files_switch"),
+        boolean=True
       ) %}
 {#-   Lookup source_files (v2), files (v1), or fallback to an empty list #}
-{%-   set src_files = salt["config.get"](
-        tplroot ~ ":tofs:source_files:" ~ lookup,
-        salt["config.get"](tplroot ~ ":tofs:files:" ~ lookup, []),
+{%-   set src_files = _tofs_settings
+      | traverse("values:source_files:" ~ lookup,
+        _tofs_settings
+        | traverse(
+          "values:files:" ~ lookup,
+          []
+        )
       ) %}
+
 {#-   Append the default source_files #}
 {%-   set src_files = src_files + source_files %}
 {#-   Only add to [""] when supporting older TOFS implementations #}
 {%-   set path_prefix_exts = [""] %}
+
 {%-   if use_subpath and tplroot != tpldir %}
 {#-     Walk directory tree to find {{ files_dir }} #}
 {%-     set subpath_parts = tpldir.lstrip(tplroot).lstrip("/").split("/") %}
@@ -68,6 +121,7 @@
 {%-       do path_prefix_exts.append("/" ~ subpath) %}
 {%-     endfor %}
 {%-   endif %}
+
 {%-   for path_prefix_ext in path_prefix_exts | reverse %}
 {%-     set path_prefix_inc_ext = path_prefix ~ path_prefix_ext %}
 {#-     For older TOFS implementation, use `files_switch` from the config #}
@@ -85,9 +139,8 @@
 {%-         if fs %}
 {%-           set fs_dirs = salt["config.get"](fs, fs) %}
 {%-         else %}
-{%-           set fs_dirs = salt["config.get"](
-                tplroot ~ ":tofs:dirs:default", "default"
-              ) %}
+{%-           set fs_dirs = _tofs_settings
+              | traverse("values:dirs:default") %}
 {%-         endif %}
 {#-         Force the `config.get` lookup result as a list where necessary #}
 {#-         since we need to also handle grains that are lists #}
