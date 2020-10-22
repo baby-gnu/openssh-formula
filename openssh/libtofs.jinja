@@ -4,6 +4,7 @@
 {#- Get the `tplroot` from `tpldir` #}
 {%- set tplroot = tpldir.split("/")[0] %}
 {%- from tplroot ~ "/libmapstack.jinja" import mapstack %}
+{%- from tplroot ~ "/libmatchers.jinja" import parse_matchers %}
 
 {#- Where is stored the `libtofs` configuration: #}
 {#- 1. `parameters/libtofs.yaml` #}
@@ -24,8 +25,8 @@
           "files": "files"
         },
         "files_switch": [
-          "id",
-          "os_family",
+          "G@id",
+          "G@os_family",
         ],
       },
     }
@@ -130,23 +131,35 @@
           tplroot ~ path_prefix_ext | replace("/", ":") ~ ":files_switch",
           files_switch_list,
         ) %}
+
+{%-     set expanded_fsl = parse_matchers(
+          matchers=fsl,
+          log_prefix="libtofs: ",
+        )
+        | load_yaml
+        %}
+{%-     set fsl = expanded_fsl | map(attribute="value") | list %}
+
 {#-     Append an empty value to evaluate as `default` in the loop below #}
 {%-     if "" not in fsl %}
 {%-       set fsl = fsl + [""] %}
 {%-     endif %}
+
 {%-     for fs in fsl %}
 {%-       for src_file in src_files %}
 {%-         if fs %}
-{%-           set fs_dirs = salt["config.get"](fs, fs) %}
+{%-           set fs_dirs = fs %}
 {%-         else %}
 {%-           set fs_dirs = _tofs_settings
               | traverse("values:dirs:default") %}
 {%-         endif %}
+
 {#-         Force the `config.get` lookup result as a list where necessary #}
 {#-         since we need to also handle grains that are lists #}
 {%-         if fs_dirs is string %}
 {%-           set fs_dirs = [fs_dirs] %}
 {%-         endif %}
+
 {%-         for fs_dir in fs_dirs %}
 {#-           strip empty elements by using a select #}
 {%-           set url = (
